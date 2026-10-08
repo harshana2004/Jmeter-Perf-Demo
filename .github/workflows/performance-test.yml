@@ -43,6 +43,14 @@ jobs:
             -Jloops=1 \
             -l results/smoke.jtl
 
+      - name: Check Smoke Results
+        run: |
+          echo "===== Smoke Test ====="
+          cat results/smoke.jtl
+
+          echo "Smoke result rows:"
+          tail -n +2 results/smoke.jtl | wc -l
+
       - name: Run Load Test
         run: |
           ./apache-jmeter-5.6.3/bin/jmeter \
@@ -52,6 +60,14 @@ jobs:
             -Jrampup=30 \
             -Jloops=5 \
             -l results/load.jtl
+
+      - name: Check Load Results
+        run: |
+          echo "===== Load Test ====="
+          head -20 results/load.jtl
+
+          echo "Load result rows:"
+          tail -n +2 results/load.jtl | wc -l
 
       - name: Run Stress Test
         run: |
@@ -63,6 +79,14 @@ jobs:
             -Jloops=5 \
             -l results/stress.jtl
 
+      - name: Check Stress Results
+        run: |
+          echo "===== Stress Test ====="
+          head -20 results/stress.jtl
+
+          echo "Stress result rows:"
+          tail -n +2 results/stress.jtl | wc -l
+
       - name: Run Spike Test
         run: |
           ./apache-jmeter-5.6.3/bin/jmeter \
@@ -72,6 +96,41 @@ jobs:
             -Jrampup=1 \
             -Jloops=2 \
             -l results/spike.jtl
+
+      - name: Check Spike Results
+        run: |
+          echo "===== Spike Test ====="
+          head -20 results/spike.jtl
+
+          echo "Spike result rows:"
+          tail -n +2 results/spike.jtl | wc -l
+
+      - name: Validate JMeter Results
+        run: |
+          echo "===== Validating JMeter Results ====="
+
+          for file in results/smoke.jtl results/load.jtl results/stress.jtl results/spike.jtl
+          do
+            echo ""
+            echo "Checking $file"
+
+            if [ ! -f "$file" ]; then
+              echo "ERROR: $file does not exist"
+              exit 1
+            fi
+
+            lines=$(wc -l < "$file")
+
+            echo "Lines: $lines"
+
+            if [ "$lines" -le 1 ]; then
+              echo "ERROR: $file contains no JMeter samples"
+              exit 1
+            fi
+          done
+
+          echo ""
+          echo "All JMeter result files contain samples."
 
       - name: Combine JMeter results
         run: |
@@ -92,6 +151,8 @@ jobs:
           rows = []
 
           for scenario, filename in files:
+              print(f"Reading {filename}")
+
               with filename.open(newline="") as f:
                   reader = csv.DictReader(f)
 
@@ -102,12 +163,18 @@ jobs:
                       row["label"] = f"{scenario} | {row['label']}"
                       rows.append(row)
 
+          if not rows:
+              raise RuntimeError(
+                  "No JMeter samples found. Combined JTL would be empty."
+              )
+
           with output.open("w", newline="") as f:
               writer = csv.DictWriter(
                   f,
                   fieldnames=header,
                   extrasaction="ignore"
               )
+
               writer.writeheader()
               writer.writerows(rows)
 
@@ -115,12 +182,15 @@ jobs:
           print(f"Total samples: {len(rows)}")
           PY
 
-      - name: Validate combined JTL
+      - name: Validate Combined JTL
         run: |
-          echo "Combined JTL:"
-          head -5 results/combined-results.jtl
+          echo "===== Combined JTL ====="
 
+          head -10 results/combined-results.jtl
+
+          echo ""
           echo "Number of result rows:"
+
           tail -n +2 results/combined-results.jtl | wc -l
 
       - name: Generate HTML Report
@@ -144,3 +214,4 @@ jobs:
         with:
           name: jmeter-results
           path: results/*.jtl
+
