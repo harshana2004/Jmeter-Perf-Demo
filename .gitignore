@@ -1,0 +1,4 @@
+results/*.jtl
+reports/performance-report/
+.DS_Store
+jmeter.log

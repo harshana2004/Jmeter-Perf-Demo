@@ -1,0 +1,129 @@
+name: JMeter Performance Test
+
+on:
+workflow_dispatch:
+push:
+branches:
+- main
+
+jobs:
+performance-test:
+runs-on: ubuntu-latest
+
+```
+steps:
+  - name: Checkout repository
+    uses: actions/checkout@v4
+
+  - name: Set up Java
+    uses: actions/setup-java@v4
+    with:
+      distribution: temurin
+      java-version: '17'
+
+  - name: Download and install JMeter
+    run: |
+      wget https://archive.apache.org/dist/jmeter/binaries/apache-jmeter-5.6.3.tgz
+      tar -xzf apache-jmeter-5.6.3.tgz
+
+  - name: Create results directory
+    run: |
+      mkdir -p results
+
+  - name: Run Smoke Test
+    run: |
+      ./apache-jmeter-5.6.3/bin/jmeter \
+        -n \
+        -t api-load-test.jmx \
+        -Jusers=1 \
+        -Jrampup=1 \
+        -Jloops=1 \
+        -l results/smoke.jtl
+
+  - name: Run Load Test
+    run: |
+      ./apache-jmeter-5.6.3/bin/jmeter \
+        -n \
+        -t api-load-test.jmx \
+        -Jusers=10 \
+        -Jrampup=30 \
+        -Jloops=5 \
+        -l results/load.jtl
+
+  - name: Run Stress Test
+    run: |
+      ./apache-jmeter-5.6.3/bin/jmeter \
+        -n \
+        -t api-load-test.jmx \
+        -Jusers=50 \
+        -Jrampup=60 \
+        -Jloops=5 \
+        -l results/stress.jtl
+
+  - name: Run Spike Test
+    run: |
+      ./apache-jmeter-5.6.3/bin/jmeter \
+        -n \
+        -t api-load-test.jmx \
+        -Jusers=100 \
+        -Jrampup=1 \
+        -Jloops=2 \
+        -l results/spike.jtl
+
+  - name: Combine JMeter results
+    run: |
+      python3 - <<'PY'
+      import csv
+
+      files = [
+          ("Smoke", "results/smoke.jtl"),
+          ("Load", "results/load.jtl"),
+          ("Stress", "results/stress.jtl"),
+          ("Spike", "results/spike.jtl"),
+      ]
+
+      output = "results/combined-results.jtl"
+
+      with open(output, "w", newline="") as out:
+          writer = None
+
+          for scenario, filename in files:
+              with open(filename, newline="") as f:
+                  reader = csv.DictReader(f)
+
+                  if writer is None:
+                      writer = csv.DictWriter(
+                          out,
+                          fieldnames=reader.fieldnames
+                      )
+                      writer.writeheader()
+
+                  for row in reader:
+                      row["label"] = f"{scenario} | {row['label']}"
+                      writer.writerow(row)
+
+      print(f"Created {output}")
+      PY
+
+  - name: Generate HTML performance report
+    run: |
+      rm -rf reports/performance-report
+      mkdir -p reports
+      ./apache-jmeter-5.6.3/bin/jmeter \
+        -g results/combined-results.jtl \
+        -e \
+        -o reports/performance-report
+
+  - name: Upload JMeter HTML report
+    uses: actions/upload-artifact@v4
+    with:
+      name: jmeter-performance-report
+      path: reports/performance-report
+
+  - name: Upload JMeter results
+    uses: actions/upload-artifact@v4
+    with:
+      name: jmeter-results
+      path: results/*.jtl
+```
+
