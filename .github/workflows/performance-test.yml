@@ -10,7 +10,6 @@ jobs:
 performance-test:
 runs-on: ubuntu-latest
 
-```
 steps:
   - name: Checkout repository
     uses: actions/checkout@v4
@@ -125,5 +124,5 @@ steps:
     with:
       name: jmeter-results
       path: results/*.jtl
-```
+
 
