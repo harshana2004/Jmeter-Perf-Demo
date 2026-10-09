@@ -30,52 +30,19 @@ jobs:
           tar -xzf apache-jmeter-5.6.3.tgz
 
       - name: Create results directory
-        run: |
-          mkdir -p results
+        run: mkdir -p results
 
       - name: Test API Connectivity
         run: |
-          echo "Testing JSONPlaceholder..."
+          echo "Checking JSONPlaceholder API..."
 
-          curl -I --max-time 30 https://jsonplaceholder.typicode.com/users
+          curl -fsS --max-time 30 -o /dev/null \
+            https://jsonplaceholder.typicode.com/users
 
-          echo ""
-          echo "Testing POST endpoint..."
+          curl -fsS --max-time 30 -o /dev/null \
+            https://jsonplaceholder.typicode.com/posts
 
-          curl -I --max-time 30 https://jsonplaceholder.typicode.com/posts
-
-          
-      - name: Diagnose JMeter test plan
-        run: |
-          echo "===== Current directory ====="
-          pwd
-
-          echo "===== JMX file ====="
-          ls -l api-load-test.jmx
-          sha256sum api-load-test.jmx
-
-          echo "===== Test plan structure ====="
-          grep -nE 'TestPlan|ThreadGroup|TransactionController|HTTPSamplerProxy|CSVDataSet|enabled=' api-load-test.jmx
-
-          echo "===== JMeter version ====="
-          ./apache-jmeter-5.6.3/bin/jmeter --version
-
-          echo "===== Run smoke test with debug logging ====="
-          mkdir -p results
-          ./apache-jmeter-5.6.3/bin/jmeter \
-            -n \
-            -t api-load-test.jmx \
-            -Jusers=1 \
-            -Jrampup=1 \
-            -Jloops=1 \
-            -j results/diagnostic.log \
-            -l results/diagnostic.jtl
-
-          echo "===== JTL output ====="
-          cat results/diagnostic.jtl
-
-          echo "===== Relevant log messages ====="
-          grep -iE 'thread|test started|test ended|error|exception|no such|disabled|started|finished' results/diagnostic.log || true
+          echo "API connectivity checks passed."
 
       - name: Run Smoke Test
         run: |
@@ -87,14 +54,6 @@ jobs:
             -Jloops=1 \
             -l results/smoke.jtl
 
-      - name: Check Smoke Results
-        run: |
-          echo "===== Smoke Test ====="
-          cat results/smoke.jtl
-
-          echo "Smoke result rows:"
-          tail -n +2 results/smoke.jtl | wc -l
-
       - name: Run Load Test
         run: |
           ./apache-jmeter-5.6.3/bin/jmeter \
@@ -104,14 +63,6 @@ jobs:
             -Jrampup=30 \
             -Jloops=5 \
             -l results/load.jtl
-
-      - name: Check Load Results
-        run: |
-          echo "===== Load Test ====="
-          head -20 results/load.jtl
-
-          echo "Load result rows:"
-          tail -n +2 results/load.jtl | wc -l
 
       - name: Run Stress Test
         run: |
@@ -123,14 +74,6 @@ jobs:
             -Jloops=5 \
             -l results/stress.jtl
 
-      - name: Check Stress Results
-        run: |
-          echo "===== Stress Test ====="
-          head -20 results/stress.jtl
-
-          echo "Stress result rows:"
-          tail -n +2 results/stress.jtl | wc -l
-
       - name: Run Spike Test
         run: |
           ./apache-jmeter-5.6.3/bin/jmeter \
@@ -141,42 +84,85 @@ jobs:
             -Jloops=2 \
             -l results/spike.jtl
 
-      - name: Check Spike Results
-        run: |
-          echo "===== Spike Test ====="
-          head -20 results/spike.jtl
-
-          echo "Spike result rows:"
-          tail -n +2 results/spike.jtl | wc -l
-
       - name: Validate JMeter Results
         run: |
-          echo "===== Validating JMeter Results ====="
+          set -e
 
-          for file in results/smoke.jtl results/load.jtl results/stress.jtl results/spike.jtl
+          for file in \
+            results/smoke.jtl \
+            results/load.jtl \
+            results/stress.jtl \
+            results/spike.jtl
           do
-            echo ""
             echo "Checking $file"
 
             if [ ! -f "$file" ]; then
-              echo "ERROR: $file does not exist"
+              echo "::error::Missing result file: $file"
               exit 1
             fi
 
             lines=$(wc -l < "$file")
 
-            echo "Lines: $lines"
-
             if [ "$lines" -le 1 ]; then
-              echo "ERROR: $file contains no JMeter samples"
+              echo "::error::$file contains no samples"
               exit 1
             fi
+
+            echo "Samples: $((lines - 1))"
           done
 
-          echo ""
-          echo "All JMeter result files contain samples."
+          echo "All result files contain samples."
 
-      - name: Combine JMeter results
+      - name: Check Failed Samples
+        run: |
+          python3 - <<'PY'
+          import csv
+          import sys
+          from pathlib import Path
+
+          files = [
+              Path("results/smoke.jtl"),
+              Path("results/load.jtl"),
+              Path("results/stress.jtl"),
+              Path("results/spike.jtl"),
+          ]
+
+          total_samples = 0
+          total_failures = 0
+
+          for path in files:
+              with path.open(newline="") as f:
+                  reader = csv.DictReader(f)
+                  rows = list(reader)
+
+              failures = [
+                  row for row in rows
+                  if row.get("success", "").strip().lower() != "true"
+              ]
+
+              print(
+                  f"{path.name}: {len(rows)} samples, "
+                  f"{len(failures)} failed"
+              )
+
+              total_samples += len(rows)
+              total_failures += len(failures)
+
+          print(f"Total samples: {total_samples}")
+          print(f"Total failed samples: {total_failures}")
+
+          if total_samples == 0:
+              print("ERROR: No samples were recorded.")
+              sys.exit(1)
+
+          if total_failures:
+              print("ERROR: One or more JMeter samples failed.")
+              sys.exit(1)
+
+          print("All JMeter samples passed.")
+          PY
+
+      - name: Combine JMeter Results
         run: |
           python3 - <<'PY'
           import csv
@@ -190,7 +176,6 @@ jobs:
           ]
 
           output = Path("results/combined-results.jtl")
-
           header = None
           rows = []
 
@@ -207,10 +192,8 @@ jobs:
                       row["label"] = f"{scenario} | {row['label']}"
                       rows.append(row)
 
-          if not rows:
-              raise RuntimeError(
-                  "No JMeter samples found. Combined JTL would be empty."
-              )
+          if not header or not rows:
+              raise RuntimeError("No JMeter samples found to combine.")
 
           with output.open("w", newline="") as f:
               writer = csv.DictWriter(
@@ -218,7 +201,6 @@ jobs:
                   fieldnames=header,
                   extrasaction="ignore"
               )
-
               writer.writeheader()
               writer.writerows(rows)
 
@@ -228,19 +210,20 @@ jobs:
 
       - name: Validate Combined JTL
         run: |
-          echo "===== Combined JTL ====="
+          lines=$(wc -l < results/combined-results.jtl)
+          samples=$((lines - 1))
 
-          head -10 results/combined-results.jtl
+          echo "Combined samples: $samples"
 
-          echo ""
-          echo "Number of result rows:"
-
-          tail -n +2 results/combined-results.jtl | wc -l
+          if [ "$samples" -le 0 ]; then
+            echo "::error::Combined JTL contains no samples."
+            exit 1
+          fi
 
       - name: Generate HTML Report
         run: |
           rm -rf reports/performance-report
-          mkdir -p reports/performance-report
+          mkdir -p reports
 
           ./apache-jmeter-5.6.3/bin/jmeter \
             -g results/combined-results.jtl \
@@ -251,11 +234,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: jmeter-performance-report
-          path: reports/performance-report
+          path: reports/performance-report/
+          if-no-files-found: error
 
       - name: Upload JMeter Results
         uses: actions/upload-artifact@v4
         with:
           name: jmeter-results
           path: results/*.jtl
-
+          if-no-files-found: error
