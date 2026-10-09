@@ -5,6 +5,8 @@
       <elementProp name="TestPlan.user_defined_variables" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments" testname="User Defined Variables">
         <collectionProp name="Arguments.arguments"/>
       </elementProp>
+      <boolProp name="TestPlan.functional_mode">false</boolProp>
+      <boolProp name="TestPlan.serialize_threadgroups">false</boolProp>
     </TestPlan>
     <hashTree>
       <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup" testname="API Load Test">
@@ -37,7 +39,7 @@
         <hashTree>
           <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="GET Users">
             <stringProp name="HTTPSampler.domain">jsonplaceholder.typicode.com</stringProp>
-            <stringProp name="HTTPSampler.protocol">http</stringProp>
+            <stringProp name="HTTPSampler.protocol">https</stringProp>
             <stringProp name="HTTPSampler.path">/users</stringProp>
             <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
             <stringProp name="HTTPSampler.method">GET</stringProp>
@@ -48,7 +50,7 @@
             </elementProp>
           </HTTPSamplerProxy>
           <hashTree>
-            <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="GET User Response Validation">
+            <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="GET User Response Validation" enabled="true">
               <collectionProp name="Asserion.test_strings">
                 <stringProp name="49586">200</stringProp>
               </collectionProp>
@@ -58,7 +60,7 @@
               <intProp name="Assertion.test_type">8</intProp>
             </ResponseAssertion>
             <hashTree/>
-            <JMESPathExtractor guiclass="JMESPathExtractorGui" testclass="JMESPathExtractor" testname="JSON JMESPath Extractor">
+            <JMESPathExtractor guiclass="JMESPathExtractorGui" testclass="JMESPathExtractor" testname="JSON JMESPath Extractor" enabled="true">
               <stringProp name="JMESExtractor.referenceName">extractedUserId</stringProp>
               <stringProp name="JMESExtractor.jmesPathExpr">[0].id</stringProp>
               <stringProp name="JMESExtractor.matchNumber">1</stringProp>
@@ -80,7 +82,7 @@
                   <stringProp name="Argument.value">{&#xd;
   &quot;title&quot;: &quot;${title}&quot;,&#xd;
   &quot;body&quot;: &quot;${body}&quot;,&#xd;
-  &quot;userId&quot;:&quot;${userId}&quot;&#xd;
+  &quot;userId&quot;:${userId}&#xd;
 }</stringProp>
                   <stringProp name="Argument.metadata">=</stringProp>
                 </elementProp>
