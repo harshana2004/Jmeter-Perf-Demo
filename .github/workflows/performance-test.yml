@@ -1,129 +1,228 @@
+
 name: JMeter Performance Test
 
-on:
-workflow_dispatch:
-push:
-branches:
-- main
+"on":
+  workflow_dispatch:
+  push:
+    branches:
+      - main
 
 jobs:
-performance-test:
-runs-on: ubuntu-latest
+  performance-test:
+    runs-on: ubuntu-latest
 
-```
-steps:
-  - name: Checkout repository
-    uses: actions/checkout@v4
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
 
-  - name: Set up Java
-    uses: actions/setup-java@v4
-    with:
-      distribution: temurin
-      java-version: '17'
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '24'
 
-  - name: Download and install JMeter
-    run: |
-      wget https://archive.apache.org/dist/jmeter/binaries/apache-jmeter-5.6.3.tgz
-      tar -xzf apache-jmeter-5.6.3.tgz
+      - name: Download JMeter
+        run: |
+          curl -L --fail --retry 5 --retry-delay 3 \
+            -o apache-jmeter-5.6.3.tgz \
+            https://dlcdn.apache.org/jmeter/binaries/apache-jmeter-5.6.3.tgz
 
-  - name: Create results directory
-    run: |
-      mkdir -p results
+          tar -xzf apache-jmeter-5.6.3.tgz
 
-  - name: Run Smoke Test
-    run: |
-      ./apache-jmeter-5.6.3/bin/jmeter \
-        -n \
-        -t api-load-test.jmx \
-        -Jusers=1 \
-        -Jrampup=1 \
-        -Jloops=1 \
-        -l results/smoke.jtl
+      - name: Create results directory
+        run: |
+          mkdir -p results
 
-  - name: Run Load Test
-    run: |
-      ./apache-jmeter-5.6.3/bin/jmeter \
-        -n \
-        -t api-load-test.jmx \
-        -Jusers=10 \
-        -Jrampup=30 \
-        -Jloops=5 \
-        -l results/load.jtl
+      - name: Test API Connectivity
+        run: |
+          echo "Testing JSONPlaceholder..."
 
-  - name: Run Stress Test
-    run: |
-      ./apache-jmeter-5.6.3/bin/jmeter \
-        -n \
-        -t api-load-test.jmx \
-        -Jusers=50 \
-        -Jrampup=60 \
-        -Jloops=5 \
-        -l results/stress.jtl
+          curl -I --max-time 30 https://jsonplaceholder.typicode.com/users
 
-  - name: Run Spike Test
-    run: |
-      ./apache-jmeter-5.6.3/bin/jmeter \
-        -n \
-        -t api-load-test.jmx \
-        -Jusers=100 \
-        -Jrampup=1 \
-        -Jloops=2 \
-        -l results/spike.jtl
+          echo ""
+          echo "Testing POST endpoint..."
 
-  - name: Combine JMeter results
-    run: |
-      python3 - <<'PY'
-      import csv
+          curl -I --max-time 30 https://jsonplaceholder.typicode.com/posts
 
-      files = [
-          ("Smoke", "results/smoke.jtl"),
-          ("Load", "results/load.jtl"),
-          ("Stress", "results/stress.jtl"),
-          ("Spike", "results/spike.jtl"),
-      ]
+      - name: Run Smoke Test
+        run: |
+          ./apache-jmeter-5.6.3/bin/jmeter \
+            -n \
+            -t api-load-test.jmx \
+            -Jusers=1 \
+            -Jrampup=1 \
+            -Jloops=1 \
+            -l results/smoke.jtl
 
-      output = "results/combined-results.jtl"
+      - name: Check Smoke Results
+        run: |
+          echo "===== Smoke Test ====="
+          cat results/smoke.jtl
 
-      with open(output, "w", newline="") as out:
-          writer = None
+          echo "Smoke result rows:"
+          tail -n +2 results/smoke.jtl | wc -l
+
+      - name: Run Load Test
+        run: |
+          ./apache-jmeter-5.6.3/bin/jmeter \
+            -n \
+            -t api-load-test.jmx \
+            -Jusers=10 \
+            -Jrampup=30 \
+            -Jloops=5 \
+            -l results/load.jtl
+
+      - name: Check Load Results
+        run: |
+          echo "===== Load Test ====="
+          head -20 results/load.jtl
+
+          echo "Load result rows:"
+          tail -n +2 results/load.jtl | wc -l
+
+      - name: Run Stress Test
+        run: |
+          ./apache-jmeter-5.6.3/bin/jmeter \
+            -n \
+            -t api-load-test.jmx \
+            -Jusers=50 \
+            -Jrampup=60 \
+            -Jloops=5 \
+            -l results/stress.jtl
+
+      - name: Check Stress Results
+        run: |
+          echo "===== Stress Test ====="
+          head -20 results/stress.jtl
+
+          echo "Stress result rows:"
+          tail -n +2 results/stress.jtl | wc -l
+
+      - name: Run Spike Test
+        run: |
+          ./apache-jmeter-5.6.3/bin/jmeter \
+            -n \
+            -t api-load-test.jmx \
+            -Jusers=100 \
+            -Jrampup=1 \
+            -Jloops=2 \
+            -l results/spike.jtl
+
+      - name: Check Spike Results
+        run: |
+          echo "===== Spike Test ====="
+          head -20 results/spike.jtl
+
+          echo "Spike result rows:"
+          tail -n +2 results/spike.jtl | wc -l
+
+      - name: Validate JMeter Results
+        run: |
+          echo "===== Validating JMeter Results ====="
+
+          for file in results/smoke.jtl results/load.jtl results/stress.jtl results/spike.jtl
+          do
+            echo ""
+            echo "Checking $file"
+
+            if [ ! -f "$file" ]; then
+              echo "ERROR: $file does not exist"
+              exit 1
+            fi
+
+            lines=$(wc -l < "$file")
+
+            echo "Lines: $lines"
+
+            if [ "$lines" -le 1 ]; then
+              echo "ERROR: $file contains no JMeter samples"
+              exit 1
+            fi
+          done
+
+          echo ""
+          echo "All JMeter result files contain samples."
+
+      - name: Combine JMeter results
+        run: |
+          python3 - <<'PY'
+          import csv
+          from pathlib import Path
+
+          files = [
+              ("Smoke", Path("results/smoke.jtl")),
+              ("Load", Path("results/load.jtl")),
+              ("Stress", Path("results/stress.jtl")),
+              ("Spike", Path("results/spike.jtl")),
+          ]
+
+          output = Path("results/combined-results.jtl")
+
+          header = None
+          rows = []
 
           for scenario, filename in files:
-              with open(filename, newline="") as f:
+              print(f"Reading {filename}")
+
+              with filename.open(newline="") as f:
                   reader = csv.DictReader(f)
 
-                  if writer is None:
-                      writer = csv.DictWriter(
-                          out,
-                          fieldnames=reader.fieldnames
-                      )
-                      writer.writeheader()
+                  if header is None:
+                      header = reader.fieldnames
 
                   for row in reader:
                       row["label"] = f"{scenario} | {row['label']}"
-                      writer.writerow(row)
+                      rows.append(row)
 
-      print(f"Created {output}")
-      PY
+          if not rows:
+              raise RuntimeError(
+                  "No JMeter samples found. Combined JTL would be empty."
+              )
 
-  - name: Generate HTML performance report
-    run: |
-      rm -rf reports/performance-report
-      mkdir -p reports
-      ./apache-jmeter-5.6.3/bin/jmeter \
-        -g results/combined-results.jtl \
-        -e \
-        -o reports/performance-report
+          with output.open("w", newline="") as f:
+              writer = csv.DictWriter(
+                  f,
+                  fieldnames=header,
+                  extrasaction="ignore"
+              )
 
-  - name: Upload JMeter HTML report
-    uses: actions/upload-artifact@v4
-    with:
-      name: jmeter-performance-report
-      path: reports/performance-report
+              writer.writeheader()
+              writer.writerows(rows)
 
-  - name: Upload JMeter results
-    uses: actions/upload-artifact@v4
-    with:
-      name: jmeter-results
-      path: results/*.jtl
-```
+          print(f"Created {output}")
+          print(f"Total samples: {len(rows)}")
+          PY
+
+      - name: Validate Combined JTL
+        run: |
+          echo "===== Combined JTL ====="
+
+          head -10 results/combined-results.jtl
+
+          echo ""
+          echo "Number of result rows:"
+
+          tail -n +2 results/combined-results.jtl | wc -l
+
+      - name: Generate HTML Report
+        run: |
+          rm -rf reports/performance-report
+          mkdir -p reports/performance-report
+
+          ./apache-jmeter-5.6.3/bin/jmeter \
+            -g results/combined-results.jtl \
+            -e \
+            -o reports/performance-report
+
+      - name: Upload HTML Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: jmeter-performance-report
+          path: reports/performance-report
+
+      - name: Upload JMeter Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: jmeter-results
+          path: results/*.jtl
 
